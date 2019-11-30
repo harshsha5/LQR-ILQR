@@ -5,6 +5,8 @@ from scipy import linalg
 import ipdb
 from copy import deepcopy
 
+# A = None
+# B = None
 
 def simulate_dynamics(env, x, u, dt=1e-5):
     """Step simulator to see how state changes.
@@ -35,6 +37,8 @@ def simulate_dynamics(env, x, u, dt=1e-5):
     previous_state = np.copy(x)
     env.state = np.copy(x)
     new_state,rewards,is_done,listo = env.step(u,dt)
+    # print("New state" ,new_state)
+    # print("Previous state" ,previous_state)
     return np.reshape((new_state-previous_state)/dt, (-1,1))
     # return np.zeros(x.shape)
 
@@ -64,9 +68,17 @@ def approximate_A(env, x, u, delta=1e-5, dt=1e-5):
     """
     # print("In approximate_A")
     for i in range(x.shape[0]):
+      sim_env = deepcopy(env)
       perturbed_state = np.copy(x)
       perturbed_state[i] += delta
-      derivative = simulate_dynamics(env,perturbed_state,u)
+      # print("Perturbed state", perturbed_state)
+      # print("u is",u)
+      derivative1 = simulate_dynamics(sim_env,perturbed_state,u)
+      sim_env = deepcopy(env)
+      # print("X is",x)
+      # print("u is",u)
+      derivative2 = simulate_dynamics(sim_env,np.copy(x),u)
+      derivative = (derivative1 - derivative2)/delta
       if(i==0):
         A = derivative
       else:
@@ -100,9 +112,17 @@ def approximate_B(env, x, u, delta=1e-5, dt=1e-5):
     """
     # print("In approximate_B")
     for i in range(u.shape[0]):
+      sim_env = deepcopy(env)
+      old_state = np.copy(x)
       perturbed_action = np.copy(u)
       perturbed_action[i] += delta
-      derivative = simulate_dynamics(env,x,perturbed_action)
+      # print("x",x)
+      derivative1 = simulate_dynamics(sim_env,x,perturbed_action)
+      sim_env = deepcopy(env)
+      # print("action ",u)
+      # print("old_state",old_state)
+      derivative2 = simulate_dynamics(sim_env,old_state,np.copy(u))
+      derivative = (derivative1 - derivative2)/delta
       if(i==0):
         B = derivative
       else:
@@ -135,7 +155,9 @@ def calc_lqr_input(env, sim_env, prev_action):
     """
     # print('In calc_lqr_input')
     present_state = env.state
-    ipdb.set_trace()
+    # global A
+    # global B
+    # if(A is None and B is None):
     A = approximate_A(deepcopy(sim_env),present_state,prev_action)
     B = approximate_B(sim_env,present_state,prev_action)
     P = linalg.solve_continuous_are(A, B, env.Q, env.R)

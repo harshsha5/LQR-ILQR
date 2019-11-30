@@ -12,19 +12,19 @@ def run_lqr(env):
   print('Running LQR')
   present_state = env.reset()
   is_done = False
-  prev_action = np.array([1,1])  #Let this be the action initialization
+  prev_action = np.array([1.0,1.0])  #Let this be the action initialization
   num_steps = 0
   num_steps_threshold = 300
   total_rewards = 0
   while(not is_done and num_steps<num_steps_threshold):
     sim_env = deepcopy(env)
     num_steps += 1
-    print("old: ",env.state)
     u = calc_lqr_input(env,sim_env,prev_action)
-    print("Next: ",env.state)
+    print("Old state is",env.state)
     new_state,rewards,is_done,listo = env.step(u)
-    # print("New state is",new_state)
+    print("New state is",new_state)
     present_state = new_state
+    print(rewards)
     total_rewards+=rewards
     prev_action = u
     # print("Previous Action: ",prev_action)
