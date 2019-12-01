@@ -1,8 +1,10 @@
 """LQR, iLQR and MPC."""
 
-from deeprl_hw6.controllers import approximate_A, approximate_B
+from controllers import approximate_A, approximate_B
 import numpy as np
 import scipy.linalg
+from copy import deepcopy
+import ipdb
 
 
 def simulate_dynamics_next(env, x, u):
@@ -70,14 +72,18 @@ def cost_final(env, x):
     """
     return None
 
-
 def simulate(env, x0, U):
+    ipdb.set_trace()
+    time_steps = U.shape[0]
+    X_new = np.tile(x0, (time_steps+1, 1))
+    for i in range(time_steps):
+      X_new[i+1],_,_,_ = env.step(U[i])
+
+    ipdb.set_trace()  
     return None
 
-
-def calc_ilqr_input(env, sim_env, tN=50, max_iter=1e6):
+def calc_ilqr_input(env, sim_env, previous_action, tN=50, max_iter=1e6):
     """Calculate the optimal control input for the given state.
-
 
     Parameters
     ----------
@@ -96,4 +102,13 @@ def calc_ilqr_input(env, sim_env, tN=50, max_iter=1e6):
     U: np.array
       The SEQUENCE of commands to execute. The size should be (tN, #parameters)
     """
+
+    present_state = env.state
+
+    if(previous_action is None):
+        prev_single_action = np.full((env.DOF, ), 1.0)
+        previous_action = np.tile(prev_single_action, (tN, 1))
+
+    simulate(deepcopy(env),np.copy(present_state),previous_action)
+
     return np.zeros((50, 2))
