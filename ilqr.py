@@ -197,7 +197,7 @@ def calc_ilqr_input(env, sim_env, previous_action, tN=50, max_iter=1e6):
       start_state = np.copy(env.state)
       new_state = np.copy(env.state) 
       for t in range(tN): 
-        new_actions[t] = previous_actions[t] + k[t] + np.dot(K[t], new_state - X_traj[t]) # 7b)
+        new_actions[t] = previous_actions[t] + k[t] + np.dot(K[t], new_state - X_traj[t]) 
         new_state,_,_,_ = env.step(new_actions[t]) 
 
       env.reset()
