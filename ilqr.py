@@ -50,7 +50,15 @@ def cost_inter(env, x, u):
     corresponding variables, ex: (1) l_x is the first order derivative d l/d x (2) l_xx is the second order derivative
     d^2 l/d x^2
     """
-    return None
+
+    l = np.sum(u**2)
+    l_x = np.zeros(x.shape[0])  #As l is independent of x
+    l_xx = np.zeros((x.shape[0],x.shape[0])) #As l is independent of x
+    l_u = 2*u
+    l_uu = 2 * np.eye(env.DOF)
+    l_ux = np.zeros((env.DOF, x.shape[0]))
+
+    return l,l_x,l_xx,l_u,l_uu,l_ux
 
 
 def cost_final(env, x):
@@ -70,17 +78,44 @@ def cost_final(env, x):
     l, l_x, l_xx The first term is the loss, where the remaining terms are derivatives respect to the
     corresponding variables
     """
-    return None
+
+    pos_err = x - env.goal
+    l = (10**4) * np.sum(pos_err**2)
+    l_x = 2*(10**4) * np.sum(np.abs(pos_err))
+    l_xx = 2*(10**4)
+    return l,l_x,l_xx
 
 def simulate(env, x0, U):
-    ipdb.set_trace()
     time_steps = U.shape[0]
     X_new = np.tile(x0, (time_steps+1, 1))
+    trajectory_cost = 0
+
     for i in range(time_steps):
       X_new[i+1],_,_,_ = env.step(U[i])
+      step_cost, _, _, _, _, _ = cost_inter(deepcopy(env),X_new[i+1],U[i])
+      trajectory_cost+=step_cost   #Do we need a dt here?
 
-    ipdb.set_trace()  
-    return None
+    final_cost,_,_ = cost_final(deepcopy(env),X_new[-1])
+    trajectory_cost+= final_cost 
+    print("Trajectory cost ",trajectory_cost)
+    return trajectory_cost
+
+# def get_f_x(env,x,U):
+#   tN = U.shape[0]
+#   f_x = np.zeros((tN, x.shape[0], x.shape[0]))    #Shape is tN X state_size X state_size
+#   for i in range(tN):
+#     A = approximate_A(env,x,U[i])
+#     x,_,_,_ = env.step(U[i])                      #See how to handle done situation here
+#     f_x[i,:,:] = A
+
+# def get_f_u(env,x,U):
+#   tN = U.shape[0]
+#   f_u = np.zeros((tN, x.shape[0], env.DOF))    #Shape is tN X state_size X action_size
+#   for i in range(tN):
+#     B = approximate_B(env,x,U[i])
+#     x,_,_,_ = env.step(U[i])                      #See how to handle done situation here
+#     f_u[i,:,:] = B  
+#   ipdb.set_trace()
 
 def calc_ilqr_input(env, sim_env, previous_action, tN=50, max_iter=1e6):
     """Calculate the optimal control input for the given state.
@@ -103,12 +138,48 @@ def calc_ilqr_input(env, sim_env, previous_action, tN=50, max_iter=1e6):
       The SEQUENCE of commands to execute. The size should be (tN, #parameters)
     """
 
-    present_state = env.state
-
     if(previous_action is None):
         prev_single_action = np.full((env.DOF, ), 1.0)
-        previous_action = np.tile(prev_single_action, (tN, 1))
+        previous_actions = np.tile(prev_single_action, (tN, 1))
 
-    simulate(deepcopy(env),np.copy(present_state),previous_action)
+    for iteration_count in range(int(max_iter)):
+      env.reset()
+      present_state = np.copy(env.state)
+      old_trajectory_cost = simulate(deepcopy(env),np.copy(present_state),previous_actions)
+
+      f_x = np.zeros((tN, present_state.shape[0], present_state.shape[0])) 
+      f_u = np.zeros((tN, present_state.shape[0], env.DOF))
+      l = np.zeros((tN+1,1))                                    #See if the +1 is correct or not, since the last step won't have a control step but would depend on the cpst final
+      l_x = np.zeros((tN+1, present_state.shape[0]))
+      l_xx = np.zeros((tN+1, present_state.shape[0],present_state.shape[0]))
+      l_u = np.zeros((tN, env.DOF))
+      l_uu = np.zeros((tN, env.DOF,env.DOF))
+      l_ux = np.zeros((tN, env.DOF,present_state.shape[0]))
+
+      for i in range(tN):
+        A = approximate_A(sim_env,present_state,previous_actions[i])
+        B = approximate_B(sim_env,present_state,previous_actions[i])
+        f_x[i,:,:] = A
+        f_u[i,:,:] = B
+        l[i], l_x[i,:], l_xx[i,:,:], l_u[i,:], l_uu[i,:,:], l_ux[i,:,:] = cost_inter(env,present_state,previous_actions[i])
+        present_state,_,_,_ = env.step(previous_actions[i])   #See how to handle done situation here
+
+      l[-1],l_x[-1],l_xx[-1] = cost_final(env,present_state)
+
+      V = np.copy(l[-1]) 
+      V_x = np.copy(l_x[-1])
+      V_xx = np.copy(l_xx[-1]) 
+      k = np.zeros((tN, env.DOF)) 
+      K = np.zeros((tN, env.DOF, present_state.shape[0])) 
+
+      for t in range(tN-1, -1, -1):
+
+        Q_x = l_x[t] + np.dot(f_x[t].T, V_x)
+        Q_u = l_u[t] + np.dot(f_u[t].T, V_x)
+
+
+
+      ipdb.set_trace()
+
 
     return np.zeros((50, 2))

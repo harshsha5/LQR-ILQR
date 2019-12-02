@@ -69,7 +69,7 @@ def run_lqr(env):
   plt.show()
   # env.viewer.close()
 
-def run_ilqr(env,total_horizon=100):
+def run_ilqr(env,total_horizon=50):
   print('Running iLQR')
   present_state = env.reset()
   is_done = False
@@ -84,7 +84,7 @@ def run_ilqr(env,total_horizon=100):
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='LQR Parser')
-  parser.add_argument('--total_horizon',dest='T',type=int,default=100)
+  parser.add_argument('--total_horizon',dest='T',type=int,default=50)
   args = parser.parse_args()
   env = gym.make('TwoLinkArm-v0')
   env.reset()
