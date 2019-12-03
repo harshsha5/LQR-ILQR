@@ -46,34 +46,39 @@ def run_lqr(env):
   u1 = [item[0] for item in action_list]
   u2 = [item[1] for item in action_list]
 
-  plt.plot(t, q1, 'r',label="q1")  
-  plt.plot(t, q2, 'g',label="q2") 
-  plt.legend(loc='upper right')
-  plt.ylabel('Joint Angles')
-  plt.xlabel('Episode Number')
-  plt.title('Joint Angles VS Episode')
-  plt.show()
-  plt.plot(t, q1_dot, 'r',label="q1_dot") 
-  plt.plot(t, q2_dot, 'g',label="q2_dot") 
-  plt.ylabel('Joint Velocities')
-  plt.xlabel('Episode Number')
-  plt.title('Joint Velocities VS Episode')
-  plt.legend(loc='upper right')
-  plt.show()
-  plt.plot(t, u1, 'b',label="u1") 
-  plt.plot(t, u2, 'g',label="u2") 
-  plt.ylabel('Action')
-  plt.xlabel('Episode Number')
-  plt.legend(loc='upper right')
-  plt.title('Action VS Episode')
-  plt.show()
+  # plt.plot(t, q1, 'r',label="q1")  
+  # plt.plot(t, q2, 'g',label="q2") 
+  # plt.legend(loc='upper right')
+  # plt.ylabel('Joint Angles')
+  # plt.xlabel('Episode Number')
+  # plt.title('Joint Angles VS Episode')
+  # plt.show()
+  # plt.plot(t, q1_dot, 'r',label="q1_dot") 
+  # plt.plot(t, q2_dot, 'g',label="q2_dot") 
+  # plt.ylabel('Joint Velocities')
+  # plt.xlabel('Episode Number')
+  # plt.title('Joint Velocities VS Episode')
+  # plt.legend(loc='upper right')
+  # plt.show()
+  # plt.plot(t, u1, 'b',label="u1") 
+  # plt.plot(t, u2, 'g',label="u2") 
+  # plt.ylabel('Action')
+  # plt.xlabel('Episode Number')
+  # plt.legend(loc='upper right')
+  # plt.title('Action VS Episode')
+  # plt.show()
   # env.viewer.close()
+  return action_list
 
-def run_ilqr(env,total_horizon=50):
+def run_ilqr(env,initialize_with_LQR = False,total_horizon=50):
   print('Running iLQR')
   present_state = env.reset()
   is_done = False
-  prev_action_list = None
+  if(initialize_with_LQR):
+    prev_action_list = run_lqr(deepcopy(env))
+    prev_action_list = np.asarray(prev_action_list[:50])
+  else:
+    prev_action_list = None
   num_steps = 0
   total_rewards = 0
   action_list = []
@@ -90,7 +95,7 @@ if __name__ == "__main__":
   env.reset()
   total_horizon = args.T
   # run_lqr(env)
-  run_ilqr(env,total_horizon)
+  run_ilqr(env,True)
   # prev_action = np.array([0,0]) 
   # u = calc_lqr_input(env,np.copy(env),prev_action)
 

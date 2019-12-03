@@ -81,8 +81,9 @@ def cost_final(env, x):
 
     pos_err = x - env.goal
     l = (10**4) * np.sum(pos_err**2)
-    l_x = 2*(10**4) * np.sum(np.abs(pos_err))
-    l_xx = 2*(10**4)
+    # l_x = 2*(10**4) * np.sum(abs(pos_err))             #TODO no abs
+    l_x = 2*(10**4) * (pos_err)   
+    l_xx = 2*(10**4) * np.eye(x.shape[0])                                     #TODO
     return l,l_x,l_xx
 
 def simulate(env, x0, U):
@@ -96,8 +97,10 @@ def simulate(env, x0, U):
       trajectory_cost+=step_cost   #Do we need a dt here?
 
     final_cost,_,_ = cost_final(deepcopy(env),X_new[-1])
+    trajectory_cost*=10**(-3)
     trajectory_cost+= final_cost 
-    print("Trajectory cost ",trajectory_cost)
+    print("Intermediate cost ",trajectory_cost-final_cost," \t Final Cost ",final_cost)
+
     return trajectory_cost,X_new
 
 # def get_f_x(env,x,U):
@@ -117,7 +120,21 @@ def simulate(env, x0, U):
 #     f_u[i,:,:] = B  
 #   ipdb.set_trace()
 
-def calc_ilqr_input(env, sim_env, previous_action, tN=50, max_iter=1e6):
+def inv_stable(M, lamb=1):
+    """Inverts matrix M in a numerically stable manner.
+
+    This involves looking at the eigenvector (i.e., spectral) decomposition of the
+    matrix, and (1) removing any eigenvectors with non-positive eingenvalues, and
+    (2) adding a constant to all eigenvalues.
+    """
+    M_evals, M_evecs = np.linalg.eig(M)
+    M_evals[M_evals < 0] = 0.0
+    M_evals += lamb
+    M_inv = np.dot(M_evecs,
+                   np.dot(np.diag(1.0 / M_evals), M_evecs.T))
+    return M_inv
+
+def calc_ilqr_input(env, sim_env, previous_actions, tN=50, max_iter=1e6):
     """Calculate the optimal control input for the given state.
 
     Parameters
@@ -139,9 +156,11 @@ def calc_ilqr_input(env, sim_env, previous_action, tN=50, max_iter=1e6):
     """
 
     CONVERGENCE_THRESHOLD = 0.01
+    LAMB = 1
+    LAMB_FACTOR = 2                             #Code referred https://studywolf.wordpress.com/2016/02/03/the-iterative-linear-quadratic-regulator-method/
 
-    if(previous_action is None):
-        prev_single_action = np.full((env.DOF, ), 1.0)
+    if(previous_actions is None):
+        prev_single_action = np.full((env.DOF, ), 0.0)
         previous_actions = np.tile(prev_single_action, (tN, 1))
 
     env.reset()
@@ -164,10 +183,19 @@ def calc_ilqr_input(env, sim_env, previous_action, tN=50, max_iter=1e6):
       for i in range(tN):
         A = approximate_A(sim_env,present_state,previous_actions[i])
         B = approximate_B(sim_env,present_state,previous_actions[i])
-        f_x[i,:,:] = A
-        f_u[i,:,:] = B                                         #See if this A and B is correct or if we need to follow the dt approach
+        f_x[i,:,:] = A*env.dt + np.eye(present_state.shape[0])
+        f_u[i,:,:] = B*env.dt                                        #See if this A and B is correct or if we need to follow the dt approach
         l[i], l_x[i,:], l_xx[i,:,:], l_u[i,:], l_uu[i,:,:], l_ux[i,:,:] = cost_inter(env,present_state,previous_actions[i])
-        present_state,_,_,_ = env.step(previous_actions[i])   #See how to handle done situation here
+        l[i]*=env.dt
+        l_x[i,:]*=env.dt
+        l_xx[i,:,:]*=env.dt
+        l_u[i,:]*=env.dt
+        l_uu[i,:,:]*=env.dt
+        l_ux[i,:,:]*=env.dt
+        present_state,_,done,_ = env.step(previous_actions[i])   #See how to handle done situation here
+        if(done):
+          print("LQR has converged")
+          break
 
       l[-1],l_x[-1],l_xx[-1] = cost_final(env,present_state)
 
@@ -178,13 +206,14 @@ def calc_ilqr_input(env, sim_env, previous_action, tN=50, max_iter=1e6):
       K = np.zeros((tN, env.DOF, present_state.shape[0])) 
 
       for t in range(tN-1, -1, -1):
-
         Q_x = l_x[t] + np.dot(f_x[t].T, V_x)
         Q_u = l_u[t] + np.dot(f_u[t].T, V_x)
         Q_xx = l_xx[t] + np.dot(f_x[t].T, np.dot(V_xx, f_x[t])) 
         Q_ux = l_ux[t] + np.dot(f_u[t].T, np.dot(V_xx, f_x[t]))
         Q_uu = l_uu[t] + np.dot(f_u[t].T, np.dot(V_xx, f_u[t]))
-        Q_uu_inv = np.linalg.pinv(Q_uu)
+        # Q_uu_inv = inv_stable(Q_uu,LAMB)
+        Q_uu_inv = np.linalg.pinv(Q_uu + LAMB*np.eye(Q_uu.shape[0]))       #TODO
+        # Q_uu_inv = np.linalg.pinv(Q_uu) 
 
         k[t] = -np.dot(Q_uu_inv, Q_u)
         K[t] = -np.dot(Q_uu_inv, Q_ux)
@@ -199,17 +228,27 @@ def calc_ilqr_input(env, sim_env, previous_action, tN=50, max_iter=1e6):
       for t in range(tN): 
         new_actions[t] = previous_actions[t] + k[t] + np.dot(K[t], new_state - X_traj[t]) 
         new_state,_,_,_ = env.step(new_actions[t]) 
+      # ipdb.set_trace()
 
       env.reset()
       new_trajectory_cost, Xnew  = simulate(deepcopy(env),np.copy(start_state),new_actions)
-      print("New Trajectory cost is: ",new_trajectory_cost)
-      previous_actions = new_actions
+      # print("New Trajectory cost is: ",new_trajectory_cost)
 
-      if(abs(old_trajectory_cost-new_trajectory_cost)<CONVERGENCE_THRESHOLD):
-        print("Convergence achived in iteration_count ",iteration_count)
-        return new_actions
+      # if(abs(old_trajectory_cost-new_trajectory_cost)<CONVERGENCE_THRESHOLD):
+      #   print("Convergence achived in iteration_count ",iteration_count)
+      #   return new_actions
+      if(old_trajectory_cost-new_trajectory_cost>0):
+        previous_actions = np.copy(new_actions)
+        old_trajectory_cost, X_traj = new_trajectory_cost,Xnew
+        LAMB /= LAMB_FACTOR
+        if(LAMB<0.0001):
+          LAMB = 0.0001
+      else:
+        LAMB *= LAMB_FACTOR
+        if(LAMB>10000):
+          print("Convergence Failed")
+          break
 
-      old_trajectory_cost, X_traj = new_trajectory_cost,Xnew
       # ipdb.set_trace()
 
 
