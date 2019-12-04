@@ -5,6 +5,7 @@ import numpy as np
 import scipy.linalg
 from copy import deepcopy
 import ipdb
+import matplotlib.pyplot as plt
 
 
 def simulate_dynamics_next(env, x, u):
@@ -103,22 +104,14 @@ def simulate(env, x0, U):
 
     return trajectory_cost,X_new
 
-# def get_f_x(env,x,U):
-#   tN = U.shape[0]
-#   f_x = np.zeros((tN, x.shape[0], x.shape[0]))    #Shape is tN X state_size X state_size
-#   for i in range(tN):
-#     A = approximate_A(env,x,U[i])
-#     x,_,_,_ = env.step(U[i])                      #See how to handle done situation here
-#     f_x[i,:,:] = A
-
-# def get_f_u(env,x,U):
-#   tN = U.shape[0]
-#   f_u = np.zeros((tN, x.shape[0], env.DOF))    #Shape is tN X state_size X action_size
-#   for i in range(tN):
-#     B = approximate_B(env,x,U[i])
-#     x,_,_,_ = env.step(U[i])                      #See how to handle done situation here
-#     f_u[i,:,:] = B  
-#   ipdb.set_trace()
+def plot_costs(cost_array):
+  t = np.arange(start = 1, stop = len(cost_array)+1, step = 1)
+  plt.plot(t, np.asarray(cost_array), 'g',label="Total Cost") 
+  plt.ylabel('Total Cost')
+  plt.xlabel('Iteration Number')
+  plt.legend(loc='upper right')
+  plt.title('Total Cost VS Iteration Number')
+  plt.show()  
 
 def inv_stable(M, lamb=1):
     """Inverts matrix M in a numerically stable manner.
@@ -134,7 +127,7 @@ def inv_stable(M, lamb=1):
                    np.dot(np.diag(1.0 / M_evals), M_evecs.T))
     return M_inv
 
-def calc_ilqr_input(env, sim_env, previous_actions, tN=50, max_iter=1e6):
+def calc_ilqr_input(env, sim_env, previous_actions, tN=100, max_iter=1e6):
     """Calculate the optimal control input for the given state.
 
     Parameters
@@ -155,9 +148,10 @@ def calc_ilqr_input(env, sim_env, previous_actions, tN=50, max_iter=1e6):
       The SEQUENCE of commands to execute. The size should be (tN, #parameters)
     """
 
-    CONVERGENCE_THRESHOLD = 0.01
+    CONVERGENCE_THRESHOLD = 0.0001
     LAMB = 1
-    LAMB_FACTOR = 2                             #Code referred https://studywolf.wordpress.com/2016/02/03/the-iterative-linear-quadratic-regulator-method/
+    LAMB_FACTOR = 2                             #Note by Harsh: Code referred https://studywolf.wordpress.com/2016/02/03/the-iterative-linear-quadratic-regulator-method/
+    cost_array = []
 
     if(previous_actions is None):
         prev_single_action = np.full((env.DOF, ), 0.0)
@@ -166,6 +160,7 @@ def calc_ilqr_input(env, sim_env, previous_actions, tN=50, max_iter=1e6):
     env.reset()
     present_state = np.copy(env.state)
     old_trajectory_cost, X_traj = simulate(deepcopy(env),np.copy(present_state),previous_actions)
+    cost_array = [old_trajectory_cost]
 
     for iteration_count in range(int(max_iter)):
       env.reset()
@@ -195,7 +190,9 @@ def calc_ilqr_input(env, sim_env, previous_actions, tN=50, max_iter=1e6):
         present_state,_,done,_ = env.step(previous_actions[i])   #See how to handle done situation here
         if(done):
           print("LQR has converged")
-          break
+          pres_state = sim_env.reset()
+          old_trajectory_cost, state_list = simulate(deepcopy(sim_env),np.copy(pres_state),previous_actions)
+          return previous_actions,state_list
 
       l[-1],l_x[-1],l_xx[-1] = cost_final(env,present_state)
 
@@ -228,16 +225,17 @@ def calc_ilqr_input(env, sim_env, previous_actions, tN=50, max_iter=1e6):
       for t in range(tN): 
         new_actions[t] = previous_actions[t] + k[t] + np.dot(K[t], new_state - X_traj[t]) 
         new_state,_,_,_ = env.step(new_actions[t]) 
-      # ipdb.set_trace()
 
       env.reset()
       new_trajectory_cost, Xnew  = simulate(deepcopy(env),np.copy(start_state),new_actions)
       # print("New Trajectory cost is: ",new_trajectory_cost)
 
-      # if(abs(old_trajectory_cost-new_trajectory_cost)<CONVERGENCE_THRESHOLD):
-      #   print("Convergence achived in iteration_count ",iteration_count)
-      #   return new_actions
+      if(abs(old_trajectory_cost-new_trajectory_cost)<CONVERGENCE_THRESHOLD):
+        print("Convergence achived in iteration_count ",iteration_count)
+        plot_costs(cost_array)
+        return new_actions,Xnew
       if(old_trajectory_cost-new_trajectory_cost>0):
+        cost_array.append(new_trajectory_cost)
         previous_actions = np.copy(new_actions)
         old_trajectory_cost, X_traj = new_trajectory_cost,Xnew
         LAMB /= LAMB_FACTOR
@@ -249,7 +247,4 @@ def calc_ilqr_input(env, sim_env, previous_actions, tN=50, max_iter=1e6):
           print("Convergence Failed")
           break
 
-      # ipdb.set_trace()
-
-
-    return np.zeros((50, 2))
+    # return np.zeros((50, 2))

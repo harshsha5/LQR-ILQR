@@ -158,8 +158,9 @@ def calc_lqr_input(env, sim_env, prev_action):
     # global A
     # global B
     # if(A is None and B is None):
+    # ipdb.set_trace()
     A = approximate_A(deepcopy(sim_env),present_state,prev_action)
-    B = approximate_B(sim_env,present_state,prev_action)
+    B = approximate_B(deepcopy(sim_env),present_state,prev_action)
     P = linalg.solve_continuous_are(A, B, env.Q, env.R)
     u = -1*np.matmul(np.matmul(np.linalg.inv(env.R),np.matmul(B.T, P)),(present_state - env.goal).T)
     return u
